@@ -1,0 +1,803 @@
+
+import com.esotericsoftware.kryo.NotNull;
+import com.sun.istack.internal.Nullable;
+import ij.gui.*;
+import ij.ImagePlus;
+import ij.io.FileSaver;
+import ij.process.ImageProcessor;
+import mmcorej.CMMCore;
+import mmcorej.TaggedImage;
+import org.micromanager.MMStudio;
+import org.micromanager.acquisition.AcquisitionManager;
+import org.micromanager.api.ScriptInterface;
+import org.micromanager.utils.FileDialogs;
+import org.micromanager.utils.ImageUtils;
+import org.micromanager.utils.MMScriptException;
+import org.micromanager.utils.ReportingUtils;
+
+import javax.swing.*;
+import java.awt.event.*;
+import java.awt.geom.Point2D;
+import java.io.*;
+import java.lang.reflect.Array;
+import java.text.BreakIterator;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Date;
+
+import static java.util.Arrays.asList;
+import static org.micromanager.MMStudio.MM_DATA_SET;
+import static org.micromanager.MMStudio.getFrame;
+
+
+public class Second extends JFrame {
+
+    private boolean apnd;
+    private AcquisitionManager acqMgr_;
+    private String openAcqDirectory_ = "";
+    private Third third_;
+//    private Third virtAcq_;
+    private Date date = new Date();
+    private int numScans;
+    private int binning;  // written this way to build another class
+
+//    int PCObinning1 = binning;
+//    private int binning = 1;
+//    private int binning = 2;
+
+//    private String ScanCount;
+//    private String Header;
+//    private String Spectral;
+//    private String RowSkip;
+//    private String Data;
+
+    private float yStep;
+    private long toSkip;
+    private double offset;
+    private File tempFileCameraImage;
+    private int bytesRead;
+    private long bytesSkipped;
+    private String acqRoot;
+    private String fileTemp;
+    private long startTime;
+    private int scanCount;
+    private File appended;
+    private FileInputStream fileInputStream;
+    private FileOutputStream fileOutputStream;
+    private BufferedInputStream bufferedInputStream;
+    private TaggedImage img;
+    private int cnt;
+    private String RbandString;
+    private String GbandString;
+    private String BbandString;
+    private String camera_exposure;
+    private String objectivesList;
+    int magnification;
+    private int timeInterval;
+    private int samples;
+    private int numLines;
+    private int finalCount;
+    private int i;
+
+    Point2D.Double position;
+    String path = "";
+//    private String[] waveLengthValues = new String[10000];  // 149
+    String resolutionChoice;
+
+
+    MMStudio gui;  // app
+    CMMCore mmc;  // core
+
+
+
+
+    Second(Third plugin) {
+        third_ = plugin;
+        initComponents();
+    }
+
+
+    private void initComponents() {
+
+        JLabel jLabel1 = new JLabel("Exposure Time (msec):");
+        JLabel jLabel2 = new JLabel("Objective:");
+        JLabel jLabel3 = new JLabel("Time Interval:");
+        JLabel jLabel4 = new JLabel("Number of Scans:");
+        JLabel jLabel5 = new JLabel("Spectral Resolution (low/high):");
+        JLabel jLabel6 = new JLabel("Number of Lines to Scan:");
+
+
+        JRadioButton radio1 = new JRadioButton("Full (696)");
+        JRadioButton radio2 = new JRadioButton("Half (349)");
+        JRadioButton radio3 = new JRadioButton("Quick (21)");
+
+        ButtonGroup group = new ButtonGroup();
+        group.add(radio1);
+        group.add(radio2);
+        group.add(radio3);
+
+
+
+
+
+
+
+        setResizable(false);  // prevents the user from dragging the edges of the GUI
+        setTitle("CytoViva Horiba");  // title to appear at the top of the pane
+        setLocationRelativeTo(null);  // where the pane appears in relation to the user's monitor
+        setSize(new java.awt.Dimension(410, 300));  // the size of the pane
+        setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+
+
+        addWindowListener(new WindowAdapter() {
+            public void windowClosing(WindowEvent e) {
+                formWindowClosing(e);
+            }
+        });
+
+
+        JTextField textBox1 = new JTextField("");
+        textBox1.addFocusListener(new FocusListener() {
+            @Override
+            public void focusGained(FocusEvent focusEvent) {
+            }
+
+            @Override
+            public void focusLost(FocusEvent focusEvent) {
+                JTextField textBox1 = (JTextField) focusEvent.getSource();
+                camera_exposure = textBox1.getText();
+            }
+        });
+
+
+        JTextField textBox3 = new JTextField("");
+        textBox3.addFocusListener(new FocusListener() {
+            @Override
+            public void focusGained(FocusEvent focusEvent) {
+            }
+
+            @Override
+            public void focusLost(FocusEvent focusEvent) {
+                JTextField textBox3 = (JTextField) focusEvent.getSource();
+                timeInterval = Integer.parseInt(textBox3.getText());
+            }
+        });
+
+
+        JTextField textBox4 = new JTextField("");
+        textBox4.addFocusListener(new FocusListener() {
+            @Override
+            public void focusGained(FocusEvent focusEvent) {
+            }
+
+            @Override
+            public void focusLost(FocusEvent focusEvent) {
+                JTextField textBox4 = (JTextField) focusEvent.getSource();
+                numScans = Integer.parseInt(textBox4.getText());
+            }
+        });
+
+
+        JTextField textBox6 = new JTextField("");
+        textBox6.addFocusListener(new FocusListener() {
+            @Override
+            public void focusGained(FocusEvent focusEvent) {
+
+            }
+
+            @Override
+            public void focusLost(FocusEvent focusEvent) {
+                JTextField textBox6 = (JTextField) focusEvent.getSource();
+                numLines = Integer.parseInt((textBox6.getText()));
+            }
+        });
+
+
+        ActionListener aListener = new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent E) {
+                if (radio1.isSelected()) {
+                    textBox6.setText(String.valueOf(696));
+                    numLines = Integer.parseInt((textBox6.getText()));
+                }
+                if (radio2.isSelected()) {
+                    textBox6.setText(String.valueOf(349));
+                    numLines = Integer.parseInt((textBox6.getText()));
+                }
+                if (radio3.isSelected()) {
+                    textBox6.setText(String.valueOf(21));
+                    numLines = Integer.parseInt((textBox6.getText()));
+                }
+            }
+        };
+
+
+        radio1.addActionListener(aListener);
+        radio2.addActionListener(aListener);
+        radio3.addActionListener(aListener);
+
+
+        JButton acqButton_ = new JButton();
+        acqButton_.setText("Start Acquisition");
+        acqButton_.setToolTipText("Starts Acquisition");
+        acqButton_.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                acqButton_ActionPerformed(e);
+            }
+        });
+
+
+        JButton openButton_ = new JButton();
+        openButton_.setText("Open Acquisition");
+        openButton_.setToolTipText("Opens Acq");
+        openButton_.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                openButton_ActionPerformed(e);
+            }
+        });
+
+
+        JButton saveButton_ = new JButton();  // MMStudioMainFrame 1122
+        saveButton_.setText("Save File");  // SimpleWindowControls 65
+        saveButton_.setToolTipText("Save Files");
+        saveButton_.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                saveButton_ActionPerformed(e);
+            }
+        });
+
+
+
+        JComboBox dropDown2 = new JComboBox();
+        dropDown2.setModel(new DefaultComboBoxModel(new String[] { "4x", "10x", "20x", "40x", "50x", "60x", "100x" }));
+        dropDown2.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                JComboBox dropDown2 = (JComboBox) evt.getSource();
+                objectivesList = (String) dropDown2.getSelectedItem();
+            }
+        });
+
+        JComboBox dropDown5 = new JComboBox();
+        dropDown5.setModel(new DefaultComboBoxModel(new String[] { "Low", "High" }));
+        dropDown5.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                JComboBox dropDown5 = (JComboBox) evt.getSource();
+                resolutionChoice = (String) dropDown5.getSelectedItem();
+            }
+        });
+
+
+        GroupLayout layout = new GroupLayout(getContentPane());
+        getContentPane().setLayout(layout);
+
+
+        layout.setAutoCreateGaps(true);
+        layout.setAutoCreateContainerGaps(true);
+
+        ImageIcon icon = new ImageIcon("C:/Program Files/Micro-Manager-1.4/res/cytovivalogo.jpg");
+        setIconImage(icon.getImage());
+
+        GroupLayout.SequentialGroup hGroup = layout.createSequentialGroup();
+
+        hGroup.addGroup(layout.createParallelGroup()
+                .addComponent(jLabel1)
+                .addComponent(jLabel2)
+                .addComponent(jLabel3)
+                .addComponent(jLabel4)
+                .addComponent(jLabel5)
+                .addComponent(jLabel6)
+                .addComponent(acqButton_));
+
+
+        hGroup.addGroup(layout.createParallelGroup().addGap(50)); // adds distance between labels and textbox
+        hGroup.addGroup(layout.createParallelGroup()
+                .addComponent(openButton_));
+
+
+        hGroup.addGroup(layout.createParallelGroup()
+                .addComponent(textBox1)
+                .addComponent(dropDown2)
+                .addComponent(textBox3)
+                .addComponent(textBox4)
+                .addComponent(dropDown5)
+                .addComponent(radio1)
+                .addComponent(radio2)
+                .addComponent(radio3)
+                .addComponent(textBox6)
+                .addComponent(saveButton_));
+
+        layout.setHorizontalGroup(hGroup);
+
+
+        GroupLayout.SequentialGroup vGroup = layout.createSequentialGroup();
+
+        vGroup.addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                .addComponent(jLabel1)
+                .addComponent(textBox1));
+        vGroup.addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                .addComponent(jLabel2)
+                .addComponent(dropDown2));
+        vGroup.addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                .addComponent(jLabel3)
+                .addComponent(textBox3));
+        vGroup.addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                .addComponent(jLabel4)
+                .addComponent(textBox4));
+        vGroup.addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                .addComponent(jLabel5)
+                .addComponent(dropDown5)
+                .addGap(20));
+        vGroup.addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                .addComponent(jLabel6)
+                .addComponent(radio1));
+        vGroup.addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                .addComponent(radio2));
+        vGroup.addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                .addComponent(radio3));
+        vGroup.addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                .addComponent(textBox6)
+                .addGap(35)); //adds distance between textbox and button
+        vGroup.addGroup(layout.createParallelGroup(GroupLayout.Alignment.BASELINE)
+                .addComponent(acqButton_)
+                .addComponent(openButton_)
+                .addComponent(saveButton_));
+
+        layout.setVerticalGroup(vGroup);
+
+    }
+
+
+    private void acqButton_ActionPerformed(ActionEvent e) {
+        third_.startFirst();
+    }
+
+    private void openButton_ActionPerformed(ActionEvent e) {
+        new Thread() {
+            @Override
+            public void run() {
+                openData(false);
+            }
+        }.start();
+    }
+
+    private void saveButton_ActionPerformed(ActionEvent e) {
+        new Thread() {
+            @Override
+            public void run() {
+                try {
+                    saveData();
+                } catch (Exception e1) {
+                    e1.printStackTrace();
+                }
+            }
+        }.start();
+    }
+
+
+
+
+
+//    private void radio1ActionPerformed(ActionEvent e) {
+//    }
+
+//    private void radio2ActionPerformed(ActionEvent e) {
+//    }
+
+//    private void radio3ActionPerformed(ActionEvent e) {
+//    }
+
+    private void formWindowClosing(WindowEvent e) {
+        third_.dispose();
+    }
+
+
+
+
+
+    public void openData(boolean inRAM) {  // MMStudioMainFrame 2351
+
+        File f = FileDialogs.openDir(this, "Please select an image data set", MM_DATA_SET);
+
+        if (f != null) {
+            if (f.isDirectory()) {
+                openAcqDirectory_ = f.getAbsolutePath();
+            } else {
+                openAcqDirectory_ = f.getParent();
+            }
+
+            openData(openAcqDirectory_, inRAM);
+        }
+    }
+
+    public void openData(String dir, boolean inRAM) {
+        String rootDir = new File(dir).getAbsolutePath();
+        String name = new File(dir).getName();
+        rootDir = rootDir.substring(0, rootDir.length() - (name.length() + 1));
+        try {
+            acqMgr_.openAcquisition(name, rootDir, true, !inRAM, true);
+            acqMgr_.getAcquisition(name).initialize();
+
+        } catch (MMScriptException ex) {
+            ReportingUtils.showError(ex);
+        } finally {
+            try {
+                acqMgr_.closeAcquisition(name);
+            } catch (MMScriptException ex) {
+                ReportingUtils.showError(ex);
+            }
+        }
+    }
+
+
+
+
+
+
+
+
+
+    public void saveData() throws IOException {
+
+        acqRoot = "C:/Users/Admin/Desktop/HSI Store/";
+        fileTemp = "Sample Temp.raw";
+        tempFileCameraImage = new File(acqRoot + fileTemp);
+
+
+        JFileChooser fileChooser_ = new JFileChooser(acqRoot);
+        fileChooser_.setDialogTitle("Specify a file to save");
+        int userSelection = fileChooser_.showSaveDialog(getParent());
+        getFrame();
+
+        if (userSelection == JFileChooser.APPROVE_OPTION) {
+            File fileToSave = fileChooser_.getSelectedFile();
+            System.out.println("Save as file: " + fileToSave.getAbsolutePath());
+            path = fileToSave.getAbsolutePath();
+        }
+        try {
+            Header();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }  // 98 - 114
+
+    public String Header() throws Exception {
+
+        String dateString = date.toString();
+        String cameraString = "Cooke/PCO Pixelfly PCI Camera";
+        String dimensionString = "696x520";
+        String exposureString = camera_exposure;
+        String magnificationString = objectivesList;
+        String timeIntervalString = Integer.toString(timeInterval);
+        String numScansString = Integer.toString(numScans);
+        int count;
+        int icount;
+
+        String linesString = Integer.toString(numLines);
+        String XpixelsizeString = "12.9e-006";
+        String YpixelsizeString = "12.9e-006";
+        int PCObinning1 = 1392;
+        int PCObinning2 = 696;
+
+
+        fileInputStream = null;
+        fileOutputStream = null;
+        bufferedInputStream = null;
+//        CMMCore gui = null;  // core
+//        MMStudio mmc = null;  // app
+
+
+        BufferedReader CSVEmpty = new BufferedReader(new FileReader("C:/wavelength_data_pco.csv"));
+        String rowEmpty = CSVEmpty.readLine();
+        String[] rowEmptyValues = rowEmpty.split(",");
+        CSVEmpty.close();
+
+
+        if (resolutionChoice != null && resolutionChoice.equals("Low")) {
+            binning = 2;
+            if (binning == 2) ;
+            {
+                samples = PCObinning2;
+                RbandString = "195";
+                GbandString = "123";
+                BbandString = "49";
+                System.out.println("binning = " + binning);
+
+                toSkip = (2 * samples * Long.valueOf(rowEmptyValues[0])) / 2;
+                System.out.println("toSkip = " + toSkip);
+                float yStep = (float) ((6.45 * binning) / magnification);
+                offset = (yStep * numLines / 2);
+                System.out.println("yStep = " + yStep);
+
+            }
+        }
+
+
+        if (resolutionChoice != null && resolutionChoice.equals("High")) {
+            binning = 1;
+            if (binning == 1) ;
+            {
+                samples = PCObinning1;
+                RbandString = "390";
+                GbandString = "246";
+                BbandString = "98";
+                System.out.println("binning = " + binning);
+
+                toSkip = (2 * samples * Long.valueOf(rowEmptyValues[0]));
+                System.out.println("toSkip = " + toSkip);
+                yStep = (float) ((6.45 * binning) / magnification);
+                offset = (yStep * numLines / 2);
+                System.out.println("yStep = " + yStep);
+            }
+        }
+
+
+        System.out.println("start scanning loop");
+
+        for (scanCount = 0; scanCount < numScans; scanCount++) {
+            startTime = System.currentTimeMillis();
+            scanCount = Integer.valueOf(scanCount);
+            appended = new File(path + "-00");
+        }
+
+        BufferedReader CSVRows = new BufferedReader(new FileReader("C:/wavelength_data_pco.csv"));
+        System.out.println("read buffer");
+        int rowCount = -1;
+        String fileRow = CSVRows.readLine();
+        while (fileRow != null) {
+            rowCount = rowCount + 1;
+            fileRow = CSVRows.readLine();
+        }
+        CSVRows.close();
+        System.out.println("done with num lines");
+
+        String[] waveLengthValues = new String[10000];
+//        String waveBuff = "";
+        int inputHeaderCount = 1;
+        cnt = 0;
+        float aveValue;
+        float two = 2;
+
+
+        BufferedReader CSVFile = new BufferedReader(new FileReader("C:/wavelength_data_pco.csv"));
+        String dataRow = "-";
+
+        if (binning == 1) {
+            System.out.println("header test 5");
+
+            for (cnt = 0; cnt < rowCount + 1; cnt++) {
+                dataRow = CSVFile.readLine();
+                String[] dataArray = dataRow.split(",");
+                System.out.println(dataArray[1]);
+                waveLengthValues[cnt] = dataArray[1];
+            }
+        }
+
+        System.out.println("header test 6");
+        if (binning == 2) {
+            System.out.println("test 7");
+
+            while (dataRow != null) {
+                System.out.println("2 bin");
+                dataRow = CSVFile.readLine();
+                String[] dataArray = dataRow.split(",");
+                Float f1 = Float.parseFloat(dataArray[1]);
+                dataRow = CSVFile.readLine();
+                if (dataRow != null) {
+                    dataArray = dataRow.split(",");
+                    Float f2 = Float.parseFloat(dataArray[1]);
+                    aveValue = (f1 + f2) / two;
+                    waveLengthValues[cnt] = Float.toString(aveValue);
+                    inputHeaderCount = inputHeaderCount + 1;
+                    cnt = cnt + 1;
+                } else {
+                    System.out.println("reached null");
+                    waveLengthValues[cnt] = dataArray[1];
+                    System.out.println(waveLengthValues[cnt]);
+                    cnt = cnt + 1;
+                }
+            }
+        }
+
+        count = Collections.frequency(Arrays.asList(waveLengthValues), null);
+        icount = (waveLengthValues.length - 1) - count;
+        finalCount = icount;
+        String bandsString = Integer.toString(finalCount);
+        String samplesString = Integer.toString(samples);
+        System.out.println("header test 8");
+        FileWriter fWriter = new FileWriter(path + "-00" + ".hdr");
+        BufferedWriter bWriter = new BufferedWriter(fWriter);
+        apnd = false;
+
+
+        System.out.println("start banner");
+        bWriter.write("ENVI");
+        bWriter.newLine();
+        bWriter.write("description = {");
+        bWriter.newLine();
+        bWriter.write("CytoViva HSI Microscope M-M image,");
+        bWriter.newLine();
+
+        bWriter.write("Date = " + dateString + ",");
+        bWriter.newLine();
+        bWriter.write("Camera vendor = " + cameraString + ",");
+        bWriter.newLine();
+        bWriter.write("CCD dimensions = " + dimensionString + ",");
+        bWriter.newLine();
+        bWriter.write("Exposure time = " + exposureString + ",");
+        bWriter.newLine();
+        bWriter.write("Gain = Low,");
+        bWriter.newLine();
+        bWriter.write("Trigger = 0,");
+        bWriter.newLine();
+        bWriter.write("Objective magnification = " + magnificationString + ",");
+        bWriter.newLine();
+        bWriter.write("Time Interval = " + timeIntervalString + ",");
+        bWriter.newLine();
+        bWriter.write("Number of Scans = " + numScansString);
+        bWriter.newLine();
+        bWriter.write("}");
+        bWriter.newLine();
+        System.out.println("start ENVI");
+
+        bWriter.write("samples = " + samplesString);
+        bWriter.newLine();
+        bWriter.write("lines = " + linesString);
+        bWriter.newLine();
+
+        bWriter.write("bands = " + bandsString);
+        bWriter.newLine();
+        bWriter.write("header offset = 0");
+        bWriter.newLine();
+        bWriter.write("file type = ENVI Standard");
+        bWriter.newLine();
+        bWriter.write("data type = 2");
+        bWriter.newLine();
+        bWriter.write("interleave = bil");
+        bWriter.newLine();
+        bWriter.write("byte order = 1");
+        bWriter.newLine();
+        bWriter.write("pixel size = {" + XpixelsizeString + "," + YpixelsizeString + "}");
+        bWriter.newLine();
+        bWriter.write("wavelength = {");
+        bWriter.newLine();
+        System.out.println("write wavelengths to header");
+
+
+        for (cnt = 1; cnt < finalCount + 1; cnt++) {
+
+            if (cnt < finalCount) {
+                bWriter.write(waveLengthValues[cnt] + ", ");
+            }
+
+            if ((cnt % 5 == 0) && (cnt != finalCount)) {
+//                bWriter.write(waveLengthValues[cnt] + ", ");
+                bWriter.newLine();
+                System.out.println("test");
+            }
+
+            if (cnt == finalCount) {
+                System.out.println("at final count");
+                bWriter.write(waveLengthValues[cnt]);
+                bWriter.newLine();
+                bWriter.write("}");
+                bWriter.newLine();
+            }
+        }
+
+
+        System.out.println("finish");
+        if (cnt % 5 == 0) {
+            bWriter.newLine();
+
+        }
+        bWriter.write("default bands = {" + RbandString + "," + GbandString + "," + BbandString + "}");
+        bWriter.newLine();
+        bWriter.close();
+        fWriter.close();
+        System.out.println("value of apnd");
+
+
+//        for (i = 0; i < numLines; i++) {
+
+        System.out.println("spectral test 1");
+        for (i = 0; i < numLines; i++) {
+            System.out.println("spectral test 2");
+
+            if (gui != null) {
+                System.out.println("spectral test 3");
+                mmc.snapImage();
+                System.out.println("spectral test 4");
+            }
+
+            if (gui != null) {
+                System.out.println("spectral test 5");
+                img = mmc.getTaggedImage();
+                img = (TaggedImage) mmc.getImage();
+                System.out.println("spectral test 6");
+            }
+
+            if (img != null) {
+                position = (gui.getXYStagePosition());
+                mmc.setXYPosition(position.x-0, position.y-yStep);
+                gui.displayImage(img);
+                System.out.println("spectral test 7");
+            }
+
+            if (gui != null) {
+                ImageProcessor proc0 = ImageUtils.makeProcessor(mmc, img);
+                ImagePlus imgp0 = new ImagePlus("", proc0);
+                FileSaver fs = new FileSaver(imgp0);
+                fs.saveAsRaw(acqRoot + fileTemp);
+                System.out.println("saved temp");
+            }
+
+
+            fileInputStream = new FileInputStream(tempFileCameraImage);
+            bufferedInputStream = new BufferedInputStream(fileInputStream);
+            int imageHeight = 2 * samples * finalCount;
+            byte[] buffer = new byte[imageHeight];
+            bytesRead = 0;
+            bytesSkipped = 0;
+            bytesSkipped = bufferedInputStream.skip(toSkip);
+            bytesRead = bufferedInputStream.read(buffer, 0, imageHeight);
+
+            bufferedInputStream.close();
+            fileInputStream.close();
+
+            System.out.println("read temp");
+
+            if (i > 0) {
+                apnd = true;
+                System.out.println("apnd true");
+            }
+            fileOutputStream = new FileOutputStream(appended, apnd);
+            fileOutputStream.write(buffer);
+            System.out.println("write appended");
+        }
+        if (fileOutputStream != null) {
+            fileOutputStream.close();
+        }
+
+        System.out.println("spectral test 10");
+        if (gui != null) {
+            System.out.println("spectral test 11");
+            mmc.setXYPosition(getX(), getY() + offset);
+            System.out.println("spectral test 12");
+
+        }
+
+        System.out.println("closed appended");
+
+        System.out.println("wait for next interval");
+        long curTime = System.currentTimeMillis();
+        while (((curTime - startTime) < 60000 * timeInterval) && (scanCount < (numScans - 1))) {
+            curTime = System.currentTimeMillis();
+        }
+
+        System.out.println("finished scanning");
+
+        return null;
+    }
+
+
+
+      // 60-64   68-96 RowSkip   116-200 toSkip   205-334 Header   336-423 Spectral
+
+
+
+    public void dispose() {
+        super.dispose();
+    }
+
+
+    public void setPlugin(Third plugin) {
+        third_ = plugin;
+    }
+}
+
+
+
+
+
+
+
