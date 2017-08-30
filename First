@@ -1,0 +1,124 @@
+import ij.gui.ImageWindow;
+import ij.process.FloatProcessor;
+import ij.process.ImageProcessor;
+import mmcorej.CMMCore;
+import mmcorej.TaggedImage;
+import org.micromanager.MMStudio;
+import org.micromanager.api.ScriptInterface;
+import org.micromanager.utils.ImageUtils;
+import org.micromanager.utils.ReportingUtils;
+
+import javax.swing.*;
+import java.awt.geom.AffineTransform;
+
+
+public class First extends Thread {
+    private final MMStudio app_;
+    private final CMMCore core_;
+    private final Third third_;
+
+
+    private ImageWindow liveWin_;
+    private AffineTransform result_ = null;
+
+    private class FirstFailedException extends Exception {
+        public FirstFailedException(String msg) {
+            super(msg);
+        }
+    }
+
+    First(ScriptInterface app, Third plugin) {
+        app_ = (MMStudio) app;
+        third_ = plugin;
+        core_ = app_.getMMCore();
+    }
+
+    ImageProcessor getSubImage(ImageProcessor proc, int x, int y, int w, int h) {
+        FloatProcessor proc2 = new FloatProcessor(w, h);
+        proc2.insert(proc, -x, -y);
+        return proc2;
+    }
+
+    ImageProcessor snapImageAt (double x, double y, boolean simulate) throws FirstFailedException {
+        if (simulate) {
+            return null;
+        } else {
+            try {
+                core_.snapImage();
+                TaggedImage image = core_.getTaggedImage();
+                app_.displayImage(image);
+                if (liveWin_ == null)
+                    liveWin_ = app_.getSnapLiveManager().getSnapLiveWindow();
+                liveWin_.setTitle("...");
+                return ImageUtils.makeMonochromeProcessor(image);
+            } catch (FirstFailedException e) {
+                throw e;
+            } catch (Exception ex) {
+                ReportingUtils.logError(ex);
+                throw new FirstFailedException(ex.getMessage());
+            }
+        }
+    }
+
+
+    AffineTransform runFirst()
+            throws InterruptedException, FirstFailedException
+    {
+        return runFirst(false);
+    }
+
+    AffineTransform runFirst(boolean sim)
+            throws InterruptedException, FirstFailedException
+    {
+        try {
+            core_.setProperty("pco_camera", "Binning", "2");  //MMStudioMainFrame 2417
+//            app_.setExposure(100);  // 2092
+            app_.setXYStagePosition(0,0);
+            app_.snapSingleImage();  // 2610
+        }
+        catch (Exception e) {
+            throw new FirstFailedException(e.getMessage());
+        }
+        return null;
+    }
+
+
+    @Override
+    public void run() {
+        synchronized (this) {
+        }
+        result_ = null;
+
+        try {
+            result_ = runFirst();
+        }
+        catch (InterruptedException e) {
+            SwingUtilities.invokeLater(new Runnable() {
+                @Override public void run() {
+                    third_.first_Failed(true);
+                }
+            });
+            return;
+        }
+        catch (final FirstFailedException e) {
+            SwingUtilities.invokeLater(new Runnable() {
+                @Override public void run() {
+                    ReportingUtils.showError(e);
+                    third_.first_Failed(false);
+                }
+            });
+            return;
+        }
+        SwingUtilities.invokeLater(new Runnable() {
+            @Override public void run() {
+                third_.first_Done();
+            }
+        });
+    }
+
+    AffineTransform getResult() {
+        return null;
+    }
+}
+
+
