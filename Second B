@@ -1,0 +1,143 @@
+import mmcorej.CMMCore;
+import org.json.JSONObject;
+import org.micromanager.MMStudio;
+import org.micromanager.acquisition.AcquisitionEngine;
+import org.micromanager.api.MMPlugin;
+import org.micromanager.api.ScriptInterface;
+import org.micromanager.api.TaggedImageStorage;
+import org.micromanager.dialogs.CalibrationListDlg;
+import org.micromanager.utils.FileDialogs;
+import org.micromanager.utils.JavaUtils;
+import org.micromanager.utils.ReportingUtils;
+
+import javax.swing.*;
+import java.awt.geom.AffineTransform;
+import java.io.File;
+import java.util.prefs.Preferences;
+
+public class Third implements MMPlugin {
+    public static final String menuName = "First";
+    public static final String tooltipDescription =
+            "Capture Tiff Image and Metadata";
+
+    private CMMCore core_;
+    private MMStudio app_;
+    private First first_;
+    private Second second_;
+
+
+    public void dispose() {
+        stopFirst();
+        if (second_ != null) {
+            second_.setVisible(false);
+            second_.dispose();
+            second_ = null;
+        }
+    }
+
+    public String getCopyright() {
+        return "CytoViva";
+    }
+
+    public String getDescription() {
+        return tooltipDescription;
+    }
+
+    public String getInfo() {
+        return null;
+    }
+
+    public String getVersion() {
+        return null;
+    }
+
+    public void setApp(ScriptInterface app) {
+        app_ = (MMStudio) app;
+        core_ = app.getMMCore();
+    }
+
+    public void show() {
+        if (second_ == null) {
+            second_ = new Second(this);
+            second_.setVisible(true);
+        } else {
+            second_.setPlugin(this);
+            second_.toFront();
+        }
+    }
+
+
+    void startFirst() {
+        first_ = new First(app_, this);
+        if (!first_.isAlive()) {
+            first_.start();
+        }
+    }
+
+
+    void stopFirst() {
+        if (first_ != null && first_.isAlive()) {
+            first_.interrupt();
+            try {
+                first_.join();
+            } catch (InterruptedException ex) {
+                ReportingUtils.logError(ex);
+            }
+        }
+    }
+
+
+    void promptToSaveResult() {
+        AffineTransform result = first_.getResult();
+        if (result == null) {
+            return;
+        }
+
+
+        CalibrationListDlg calDialog = app_.getCalibrationListDlg();
+        calDialog.updateCalibrations();
+        calDialog.setVisible(true);
+
+        Preferences prefs = Preferences.userNodeForPackage(MMStudio.class);
+
+        try {
+            JavaUtils.putObjectInPrefs(prefs, "affine_transform_" + core_.getCurrentPixelSizeConfig(), result);
+        }
+        catch (Exception ex) {
+            ReportingUtils.logError(ex);
+        }
+
+        int response = JOptionPane.showConfirmDialog(null,
+                JOptionPane.YES_NO_OPTION);
+
+        String reply;
+
+        if (response == JOptionPane.YES_OPTION) {
+            String pixelConfig;
+            try {
+                pixelConfig = core_.getCurrentPixelSizeConfig();
+                if (pixelConfig.length() > 0) {
+
+                }
+                else {
+                }
+
+                calDialog.updateCalibrations();
+                calDialog.setVisible(true);
+            }
+            catch (Exception ex) {
+                ReportingUtils.logError(ex);
+            }
+        }
+    }
+
+
+    void first_Done() {
+        promptToSaveResult();
+    }
+
+    void first_Failed(boolean canceled) {
+        if (!canceled) {
+        }
+    }
+}
